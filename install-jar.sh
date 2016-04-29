@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/usr/bin/env bash
 set -e
 set -x
 #                                                 888      888          
@@ -33,6 +33,10 @@ case $i in
     CUSTOM_DIR="${i#*=}"
     shift
     ;;
+    -u=*|--user=*)
+    APP_USER="${i#*=}"
+    shift
+    ;;
     *)
     # unknown option
     ;;
@@ -42,7 +46,7 @@ done
 # Validate parameters
 if [ -z "$APP_ID" ]; then echo "Passing an app name (-n=, --name=) is required"; exit 1; fi
 if [ -z "$APP_SOURCE" ]; then echo "Passing an executable jar file location (-s=, --source=) is required"; exit 1; fi
-if ! [[ $APP_ID =~ ^[a-zA-Z_\-]+$ ]]; then
+if ! [[ $APP_ID =~ ^[0-9a-zA-Z_\-]+$ ]]; then
   echo "The application name may only contain [a-zA-Z_\\-]"
   exit 1
 fi
@@ -53,6 +57,11 @@ if [ -z "$CUSTOM_DIR" ]; then
 else
   APP_DIR="$CUSTOM_DIR"
 fi
+
+JVM_ARGS="-server -Xms500m -Xmx1g -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -Dsun.net.inetaddr.ttl=60 -Dsun.net.client.defaultConnectTimeout=5000 -Dsun.net.client.defaultReadTimeout=5000"
+
+# Default app service user
+[ -z "$APP_USER" ] && APP_USER="$APP_ID"
 
 # Helper function to fetch a local, remote http(s)), or S3 file
 get_file() 
@@ -79,12 +88,7 @@ get_file()
 #  "Y8888P 888     "Y8888  "Y888888  "Y888 "Y8888        "Y88888  88888P'  "Y8888  888     
 
 # Create service user if it doesn't exist
-if id -u $APP_ID &>/dev/null; then
-  usermod -d "$APP_DIR" "$APP_ID"
-  chsh -s /sbin/nologin "$APP_ID"
-else
-  useradd -s /sbin/nologin -d "$APP_DIR" "$APP_ID"
-fi
+id -u $APP_USER &>/dev/null || useradd -s /sbin/nologin -d "$APP_DIR" "$APP_USER"
 
 #      888 d8b                          888                    d8b                   
 #      888 Y8P                          888                    Y8P                   
@@ -97,8 +101,8 @@ fi
 
 # Create app directory structure
 mkdir -p "$APP_DIR"
-if ! sudo -u "$APP_ID" [ -x $APP_DIR ]; then
-  echo "Directory $APP_DIR is not accessible to user $APP_ID. Check the parent directory permissions."
+if ! sudo -u "$APP_USER" [ -x $APP_DIR ]; then
+  echo "Directory $APP_DIR is not accessible to user $APP_USER. Check the parent directory permissions."
   exit 1
 fi
 (cd "$APP_DIR" && mkdir -p bin lib conf logs)
@@ -122,12 +126,7 @@ fi
 get_file "$APP_SOURCE" "$APP_DIR/lib/$APP_ID.jar"
 
 # Copy config file
-if [ -z "$APP_CONFIG_FILE" ]; then
-  touch "$APP_DIR/conf/config.yml"
-else
-  get_file "$APP_CONFIG_FILE" "$APP_DIR/conf/config.yml"
-fi
-
+[ -z "$APP_CONFIG_FILE" ] || get_file "$APP_CONFIG_FILE" "$APP_DIR/conf/"
 
 #          888                     888                                   d8b          888    
 #          888                     888                                   Y8P          888    
@@ -140,11 +139,11 @@ fi
 #                                                                            888             
 #                                                                            888             
 #                                                                            888 
-PROCESS_PLACEHOLDERS_CMD="sed \"s|%%APP_ID%%|$APP_ID|g; s|%%APP_DIR%%|$APP_DIR|g\""
+PROCESS_PLACEHOLDERS_CMD="sed \"s|%%APP_ID%%|$APP_ID|g; s|%%APP_USER%%|$APP_USER|g; s|%%APP_DIR%%|$APP_DIR|g; s|%%APP_ARGS%%|$APP_ARGS|g; s|%%JVM_ARGS%%|$JVM_ARGS|g\""
 
 cat << 'EOF' | eval $PROCESS_PLACEHOLDERS_CMD > "$APP_DIR/bin/start.sh"
 #!/bin/bash
-[[ "$USER" == "%%APP_ID%%" ]] || exec su -l -s /bin/sh -c "exec $0" %%APP_ID%%
+[[ "$USER" == "%%APP_USER%%" ]] || exec su -l -s /bin/sh -c "exec $0" %%APP_USER%%
 
 exec &> >(exec logger -s -t "%%APP_ID%%")
 
@@ -157,7 +156,7 @@ for configfile in conf/*.sh ; do
   source "$configfile"
 done
 
-java -server -jar "lib/%%APP_ID%%.jar" server "conf/config.yml" &
+java %%JVM_ARGS%% -jar "lib/%%APP_ID%%.jar" %%APP_ARGS%% &
 
 wait
 EOF
@@ -175,11 +174,8 @@ EOF
 # 888
 
 # Make start script executable
-chown "$APP_ID:$APP_ID" "$APP_DIR/bin/start.sh"
+chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 chmod 770 "$APP_DIR/bin/start.sh"
-
-# Make log dir owned by service user
-chown "$APP_ID:$APP_ID" "$APP_DIR/logs/"
 
 # d8b                   888             888 888                                         d8b                  
 # Y8P                   888             888 888                                         Y8P                  
@@ -195,7 +191,7 @@ description "%%APP_ID%%"
 stop on runlevel [!2345]
 start on stopped rc
 respawn
-exec su -l -s /bin/sh -c "exec ./bin/start.sh" "%%APP_ID%%"
+exec su -l -s /bin/sh -c "exec %%APP_DIR%%/bin/start.sh" "%%APP_USER%%"
 EOF
 
 # Enable and start service
