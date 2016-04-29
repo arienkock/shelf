@@ -37,6 +37,14 @@ case $i in
     APP_USER="${i#*=}"
     shift
     ;;
+    --jvm_args=*)
+    JVM_ARGS="${i#*=}"
+    shift
+    ;;
+    --args=*)
+    APP_ARGS="${i#*=}"
+    shift
+    ;;
     *)
     # unknown option
     ;;
@@ -58,6 +66,7 @@ else
   APP_DIR="$CUSTOM_DIR"
 fi
 
+[ -z "$JVM_ARGS" ] && \
 JVM_ARGS="-server -Xms500m -Xmx1g -XX:+UseConcMarkSweepGC -XX:+CMSParallelRemarkEnabled -Dsun.net.inetaddr.ttl=60 -Dsun.net.client.defaultConnectTimeout=5000 -Dsun.net.client.defaultReadTimeout=5000"
 
 # Default app service user
