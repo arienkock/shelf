@@ -114,7 +114,7 @@ if ! sudo -u "$APP_USER" [ -x $APP_DIR ]; then
   echo "Directory $APP_DIR is not accessible to user $APP_USER. Check the parent directory permissions."
   exit 1
 fi
-(cd "$APP_DIR" && mkdir -p bin lib conf logs)
+(cd "$APP_DIR" && mkdir -p bin lib config logs)
 
 #                                          .d888 d8b 888                   
 #                                         d88P"  Y8P 888                   
@@ -135,7 +135,7 @@ fi
 get_file "$APP_SOURCE" "$APP_DIR/lib/$APP_ID.jar"
 
 # Copy config file
-[ -z "$APP_CONFIG_FILE" ] || get_file "$APP_CONFIG_FILE" "$APP_DIR/conf/"
+[ -z "$APP_CONFIG_FILE" ] || get_file "$APP_CONFIG_FILE" "$APP_DIR/config/"
 
 #          888                     888                                   d8b          888    
 #          888                     888                                   Y8P          888    
@@ -161,7 +161,7 @@ set -x
 
 cd "%%APP_DIR%%"
 shopt -s nullglob
-for configfile in conf/*.sh ; do
+for configfile in config/*.sh ; do
   source "$configfile"
 done
 
@@ -183,7 +183,7 @@ EOF
 # 888
 
 # Make start script executable
-chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+(cd "$APP_DIR" ; chown -R "$APP_USER:$APP_USER"  bin lib config logs)
 chmod 770 "$APP_DIR/bin/start.sh"
 
 # d8b                   888             888 888                                         d8b                  
